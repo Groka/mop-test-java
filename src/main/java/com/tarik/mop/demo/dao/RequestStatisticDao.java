@@ -10,6 +10,6 @@ import java.util.List;
 
 @Repository
 public interface RequestStatisticDao extends CrudRepository<RequestStatistic, Long> {
-    @Query(value = "SELECT new com.tarik.mop.demo.model.RequestStatisticResult(rs.url, AVG(rs.responseTime)) FROM RequestStatistic rs GROUP BY rs.url")
+    @Query(value = "SELECT new com.tarik.mop.demo.model.RequestStatisticResult(rs.url, AVG(rs.responseTime)) FROM RequestStatistic rs WHERE DATE(rs.requestExecutedAt) >= CURRENT_DATE GROUP BY rs.url")
     List<RequestStatisticResult> getAvgResponseTimePerUrl();
 }
