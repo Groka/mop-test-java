@@ -8,7 +8,6 @@ import com.tarik.mop.demo.model.RequestStatisticResult;
 import com.tarik.mop.demo.service.StatisticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -18,10 +17,6 @@ import java.util.stream.Stream;
 
 @Service
 public class StatisticsServiceImpl implements StatisticsService {
-
-    @Autowired
-    RestTemplate restTemplate;
-
     @Autowired
     RequestStatisticDao requestStatisticDao;
 
@@ -41,48 +36,17 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         AtomicReference<List<ProductInfoResult>> result = new AtomicReference<>();
         
-        futureList.parallelStream().
-                map(future -> {
-                    try {
-                        long start = System.currentTimeMillis();
-                        List<ProductInfo> ret = future.get();
-                        waitingFutures.remove(future);
-
-                        if (waitingFutures.size() == 1) {
-                            waitingFutures.forEach(f -> f.cancel(true));
-                        }
-
-                        long end = System.currentTimeMillis();
-                        System.out.println("Time spent waiting for the response:  " + (end - start) + " miliseconds");
-
-                        return ret;
-                    } catch (InterruptedException | ExecutionException | CancellationException e) {
-                        System.out.println("Future interrupted because: " + e.getMessage());
-                    }
-                    return new ArrayList<ProductInfo>();
-                })
-                .reduce((productInfos, productInfos2) -> {
-                    long start = System.currentTimeMillis();
-
-                    final var ret = Stream.concat(productInfos.parallelStream(), productInfos2.stream()).collect(Collectors.toList());
-
-                    long end = System.currentTimeMillis();
-                    System.out.println("Time spent in reduce:  " + (end - start) + " miliseconds");
-
-                    return ret;
-                })
-                .ifPresent(productInfos -> {
-                    long start = System.currentTimeMillis();
-                            result.set(
-                                    productInfos.parallelStream()
-                                            .collect(Collectors.groupingByConcurrent(ProductInfo::getProductId, Collectors.mapping(ProductInfo::getPrice, Collectors.toList())))
-                                            .entrySet().parallelStream().sorted(Comparator.comparingInt(Map.Entry::getKey))
-                                            .map(integerListEntry -> new ProductInfoResult(integerListEntry.getKey(), integerListEntry.getValue()))
-                                            .collect(Collectors.toList()));
-
-                    long end = System.currentTimeMillis();
-                    System.out.println("Time spent mapping:  " + (end - start) + " miliseconds");
-                });
+        futureList.parallelStream()
+                .map(future -> getFutureResult(future, waitingFutures))
+                .reduce((productInfos, productInfos2) -> Stream.concat(productInfos.parallelStream(), productInfos2.stream()).collect(Collectors.toList()))
+                .ifPresent(productInfos -> result.set(
+                        productInfos.parallelStream()
+                                .collect(Collectors.groupingByConcurrent(ProductInfo::getProductId, Collectors.mapping(ProductInfo::getPrice, Collectors.toList())))
+                                .entrySet()
+                                .parallelStream()
+                                .sorted(Comparator.comparingInt(Map.Entry::getKey))
+                                .map(integerListEntry -> new ProductInfoResult(integerListEntry.getKey(), integerListEntry.getValue()))
+                                .collect(Collectors.toList())));
 
         executorService.shutdown();
 
@@ -92,5 +56,25 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Override
     public List<RequestStatisticResult> getRequestsStatistics() {
         return requestStatisticDao.getAvgResponseTimePerUrl();
+    }
+
+    private List<ProductInfo> getFutureResult(Future<List<ProductInfo>> future, List<Future<List<ProductInfo>>> waitingFutures) {
+        try {
+            long start = System.currentTimeMillis();
+            List<ProductInfo> ret = future.get();
+            waitingFutures.remove(future);
+
+            if (waitingFutures.size() == 1) {
+                waitingFutures.forEach(f -> Objects.requireNonNull(f).cancel(true));
+            }
+
+            long end = System.currentTimeMillis();
+            System.out.println("Time spent waiting for the response:  " + (end - start) + " miliseconds");
+
+            return ret;
+        } catch (InterruptedException | ExecutionException | CancellationException e) {
+            System.out.println("Future canceled.");
+        }
+        return new ArrayList<>();
     }
 }
