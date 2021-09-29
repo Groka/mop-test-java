@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tarik.mop.demo.dao.RequestStatisticDao;
 import com.tarik.mop.demo.entity.RequestStatistic;
 import com.tarik.mop.demo.model.ProductInfo;
+import org.apache.http.ConnectionClosedException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpUriRequest;
@@ -90,7 +91,7 @@ public class ProductCallable implements Callable<List<ProductInfo>> {
 
                 System.out.println("Result size: " + result.size());
             }
-        } catch (SocketException e) {
+        } catch (SocketException | ConnectionClosedException e) {
             System.out.println("Connection closed on thread: " + Thread.currentThread());
         } catch (IOException e) {
             e.printStackTrace();
